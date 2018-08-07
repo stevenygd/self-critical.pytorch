@@ -19,15 +19,10 @@ import eval_utils
 import misc.utils as utils
 from misc.rewards import init_scorer, get_self_critical_reward
 
-try:
-    import tensorboardX as tb
-except ImportError:
-    print("tensorboardX is not installed")
-    tb = None
+import tensorboardX as tb
 
 def add_summary_value(writer, key, value, iteration):
-    if writer:
-        writer.add_scalar(key, value, iteration)
+    writer.add_scalar(key, value, iteration)
 
 def train(opt):
     # Deal with feature things before anything
@@ -38,7 +33,8 @@ def train(opt):
     opt.vocab_size = loader.vocab_size
     opt.seq_length = loader.seq_length
 
-    tb_summary_writer = tb and tb.SummaryWriter(opt.checkpoint_path)
+    tb_summary_writer = tb and tb.SummaryWriter(log_dir=opt.checkpoint_path)
+    print(opt.checkpoint_path)
 
     infos = {}
     histories = {}
@@ -107,7 +103,7 @@ def train(opt):
                 sc_flag = False
 
             update_lr_flag = False
-                
+
         start = time.time()
         # Load data from train split (0)
         data = loader.get_batch('train')
@@ -119,7 +115,7 @@ def train(opt):
         tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks']]
         tmp = [_ if _ is None else torch.from_numpy(_).cuda() for _ in tmp]
         fc_feats, att_feats, labels, masks, att_masks = tmp
-        
+
         optimizer.zero_grad()
         if not sc_flag:
             loss = crit(dp_model(fc_feats, att_feats, labels, att_masks), labels[:,1:], masks[:,1:])

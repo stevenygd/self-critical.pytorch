@@ -10,6 +10,7 @@ import random
 
 import torch
 import torch.utils.data as data
+import functools
 
 import multiprocessing
 
@@ -33,7 +34,7 @@ class DataLoader(data.Dataset):
         self.opt = opt
         self.batch_size = self.opt.batch_size
         self.seq_per_img = opt.seq_per_img
-        
+
         # feature related options
         self.use_att = getattr(opt, 'use_att', True)
         self.use_box = getattr(opt, 'use_box', 0)
@@ -46,7 +47,7 @@ class DataLoader(data.Dataset):
         self.ix_to_word = self.info['ix_to_word']
         self.vocab_size = len(self.ix_to_word)
         print('vocab size is ', self.vocab_size)
-        
+
         # open the hdf5 file
         print('DataLoader loading h5 file: ', opt.input_fc_dir, opt.input_att_dir, opt.input_box_dir, opt.input_label_h5)
         self.h5_label_file = h5py.File(self.opt.input_label_h5, 'r', driver='core')
@@ -84,7 +85,7 @@ class DataLoader(data.Dataset):
         print('assigned %d images to split test' %len(self.split_ix['test']))
 
         self.iterators = {'train': 0, 'val': 0, 'test': 0}
-        
+
         self._prefetch_process = {} # The three prefetch process
         for split in self.iterators.keys():
             self._prefetch_process[split] = BlobFetcher(split, self, split=='train')
@@ -135,7 +136,7 @@ class DataLoader(data.Dataset):
                 ix, tmp_wrapped = self._prefetch_process[split].get()
             fc_batch.append(tmp_fc)
             att_batch.append(tmp_att)
-            
+
             label_batch[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(ix, seq_per_img)
 
             if tmp_wrapped:
@@ -143,7 +144,7 @@ class DataLoader(data.Dataset):
 
             # Used for reward evaluation
             gts.append(self.h5_label_file['labels'][self.label_start_ix[ix] - 1: self.label_end_ix[ix]])
-        
+
             # record associated info as well
             info_dict = {}
             info_dict['ix'] = ix
@@ -157,7 +158,8 @@ class DataLoader(data.Dataset):
         fc_batch, att_batch, label_batch, gts, infos = \
             zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: 0, reverse=True))
         data = {}
-        data['fc_feats'] = np.stack(reduce(lambda x,y:x+y, [[_]*seq_per_img for _ in fc_batch]))
+        data['fc_feats'] = np.stack(functools.reduce(
+            lambda x,y:x+y, [[_]*seq_per_img for _ in fc_batch]))
         # merge att_feats
         max_att_len = max([_.shape[0] for _ in att_batch])
         data['att_feats'] = np.zeros([len(att_batch)*seq_per_img, max_att_len, att_batch[0].shape[1]], dtype = 'float32')
@@ -273,7 +275,7 @@ class BlobFetcher():
         self.dataloader.iterators[self.split] = ri_next
 
         return ix, wrapped
-    
+
     def get(self):
         if not hasattr(self, 'split_loader'):
             self.reset()
