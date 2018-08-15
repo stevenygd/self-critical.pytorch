@@ -66,7 +66,8 @@ def train(opt):
         best_val_score = infos.get('best_val_score', None)
 
     model = models.setup(opt).cuda()
-    dp_model = torch.nn.DataParallel(model)
+    # dp_model = torch.nn.DataParallel(model)
+    dp_model = model
 
     update_lr_flag = True
     # Assure in training mode
@@ -81,15 +82,26 @@ def train(opt):
         optimizer.load_state_dict(torch.load(os.path.join(opt.start_from, 'optimizer.pth')))
 
     while True:
-        if update_lr_flag:
-                # Assign the learning rate
-            if epoch > opt.learning_rate_decay_start and opt.learning_rate_decay_start >= 0:
-                frac = (epoch - opt.learning_rate_decay_start) // opt.learning_rate_decay_every
-                decay_factor = opt.learning_rate_decay_rate  ** frac
-                opt.current_lr = opt.learning_rate * decay_factor
-            else:
-                opt.current_lr = opt.learning_rate
+        # [added] reproduce straight line learning rate decay in supplementary
+        #      ---- the original paper used 60k iters
+        #      ---- if lr goes to zero just stay at the last lr
+        linear_lr = -(iteration+1)*opt.learning_rate/60000 + opt.learning_rate
+        if linear_lr <= 0:
+            pass
+        else:
+            opt.current_lr = linear_lr
             utils.set_lr(optimizer, opt.current_lr)
+
+        if update_lr_flag:
+            # Assign the learning rate
+            # if epoch > opt.learning_rate_decay_start and opt.learning_rate_decay_start >= 0:
+            #     frac = (epoch - opt.learning_rate_decay_start) // opt.learning_rate_decay_every
+            #     decay_factor = opt.learning_rate_decay_rate  ** frac
+            #     opt.current_lr = opt.learning_rate * decay_factor
+            # else:
+            #     opt.current_lr = opt.learning_rate
+            # utils.set_lr(optimizer, opt.current_lr)
+
             # Assign the scheduled sampling prob
             if epoch > opt.scheduled_sampling_start and opt.scheduled_sampling_start >= 0:
                 frac = (epoch - opt.scheduled_sampling_start) // opt.scheduled_sampling_increase_every
