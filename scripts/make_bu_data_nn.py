@@ -32,6 +32,7 @@ infiles = ['trainval/karpathy_test_resnet101_faster_rcnn_genome.tsv',
 os.makedirs(args.output_dir+'_att')
 os.makedirs(args.output_dir+'_fc')
 os.makedirs(args.output_dir+'_box')
+os.makedirs(args.output_dir+'_nn')
 
 imgid = []
 chipid = [] # str(imgid + '_' + ctr)
