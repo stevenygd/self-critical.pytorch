@@ -39,6 +39,7 @@ os.makedirs(args.output_dir+'_box')
 os.makedirs(args.output_dir+'_nn')
 
 imgid = []
+nondup_imgid = []
 chipid = [] # str(imgid + '_' + ctr)
 feats = []
 fc_feats = []
@@ -58,11 +59,12 @@ for infile in infiles:
             for ctr in range(item['num_boxes']):
                 imgid.append(item['image_id'])
                 chipid.append("%d_%d"%(item['image_id'], ctr))
+            nondup_imgid.append(item['image_id'])
             feats.append(item['features'])
             fc_feats.append(item['features'].mean(0))
-            np.savez_compressed(os.path.join(args.output_dir+'_att', str(item['image_id'])), feat=item['features']) # 32xD
+            np.savez_compressed(os.path.join(args.output_dir+'_att', str(item['image_id'])), feat=item['features']) # 32x2048
             np.save(os.path.join(args.output_dir+'_fc', str(item['image_id'])),
-                item['features'].mean(0)) # 32xD -> D
+                item['features'].mean(0)) # 32x2048 -> 2048
             np.save(os.path.join(args.output_dir+'_box', str(item['image_id'])), item['boxes'])
 
 feats = np.concatenate(feats, axis=0)
@@ -71,7 +73,8 @@ np.savez_compressed(os.path.join(args.output_dir+"_nn", "feat.npz"), feats)
 np.savez_compressed(os.path.join(args.output_dir+"_nn", "fc_feat.npz"), fc_feats)
 infos = {
         'imgid' : imgid,
-        'chipid' : chipid
+        'chipid' : chipid,
+        'nondup_imgid' :nondup_imgid
         }
 np.save(os.path.join(args.output_dir+"_nn", "info.npy"), infos)
 
