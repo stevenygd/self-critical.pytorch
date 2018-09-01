@@ -35,6 +35,8 @@ class DataLoader(data.Dataset):
         self.batch_size = self.opt.batch_size
         self.seq_per_img = opt.seq_per_img
 
+        # load nearest neighbour idx to coco
+
         # feature related options
         self.use_att = getattr(opt, 'use_att', True)
         self.use_box = getattr(opt, 'use_box', 0)

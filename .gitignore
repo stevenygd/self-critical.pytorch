@@ -1,0 +1,15 @@
+.ipynb_checkpoints/
+*.pyc
+data/
+*log*/
+*repro*/
+*sup*/
+tb/
+coco-caption/
+data
+resnet-features-coco2014/
+sup_repro*
+*adam*/
+imgid_2_ann.json
+eval_results/
+
