@@ -49,6 +49,23 @@ class DataLoader(data.Dataset):
         self.vocab_size = len(self.ix_to_word)
         print('vocab size is ', self.vocab_size)
 
+        # [naxin] load knn lists
+        self.knn_idx = np.load('data/resnet-features-coco2014/peteranderson-fcfeat-knnidx.npy')
+
+        # load nearest neighbour idx to coco
+        coco_ids = np.load('data/cocobu_nn/info.npy').item().get('nondup_imgid')
+        self.knn_to_coco = {}
+        for i, coco_id in enumerate(coco_ids):
+            self.knn_to_coco[i] = coco_id
+
+        # [naxin] setup nearest neighbour idx to idx and also its reverse
+        self.idx_to_knn = {}
+        self.knn_to_idx = {}
+        for key in self.knn_to_coco.keys():
+            val = self.cocoid_to_idx[self.knn_to_coco[key]]
+            self.knn_to_idx[key] = val
+            self.idx_to_knn[val] = key
+
         # open the hdf5 file
         print('DataLoader loading h5 file: ', opt.input_fc_dir, opt.input_att_dir, opt.input_box_dir, opt.input_label_h5)
         self.h5_label_file = h5py.File(self.opt.input_label_h5, 'r', driver='core')
@@ -118,25 +135,29 @@ class DataLoader(data.Dataset):
         return seq
 
     def get_batch(self, split, batch_size=None, seq_per_img=None):
+        # [naxin] knn data is currently stored in 'knn' key, not processed.
         batch_size = batch_size or self.batch_size
         seq_per_img = seq_per_img or self.seq_per_img
 
-        fc_batch = [] # np.ndarray((batch_size * seq_per_img, self.opt.fc_feat_size), dtype = 'float32')
+        fc_batch = [] # np.ndarray((batch_size * seq_per_img, self.opt.fc_feat_size), dtype = 'float32')i
         att_batch = [] # np.ndarray((batch_size * seq_per_img, 14, 14, self.opt.att_feat_size), dtype = 'float32')
         label_batch = np.zeros([batch_size * seq_per_img, self.seq_length + 2], dtype = 'int')
         mask_batch = np.zeros([batch_size * seq_per_img, self.seq_length + 2], dtype = 'float32')
 
         wrapped = False
 
+        knn_tmps = []
+
         infos = []
         gts = []
 
         for i in range(batch_size):
-            # fetch image
-            tmp_fc, tmp_att,\
-                ix, tmp_wrapped = self._prefetch_process[split].get()
+            # fetch image, [naxin] all knn data are in knn_tmp
+            (tmp_fc, tmp_att,\
+                ix, tmp_wrapped), knn_tmp = self._prefetch_process[split].get()
             fc_batch.append(tmp_fc)
             att_batch.append(tmp_att)
+            knn_tmps.append(knn_tmp)
 
             label_batch[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(ix, seq_per_img)
 
@@ -153,9 +174,7 @@ class DataLoader(data.Dataset):
             info_dict['file_path'] = self.info['images'][ix]['file_path']
             infos.append(info_dict)
 
-        # #sort by att_feat length
-        # fc_batch, att_batch, label_batch, gts, infos = \
-        #     zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: len(x[1]), reverse=True))
+        # [naxin] since key is constant the line below shouldn't be doing anything for knn_tmps
         fc_batch, att_batch, label_batch, gts, infos = \
             zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: 0, reverse=True))
         data = {}
@@ -184,12 +203,11 @@ class DataLoader(data.Dataset):
         data['bounds'] = {'it_pos_now': self.iterators[split], 'it_max': len(self.split_ix[split]), 'wrapped': wrapped}
         data['infos'] = infos
 
+        data['knn'] = knn_tmps
+
         return data
 
-    # It's not coherent to make DataLoader a subclass of Dataset, but essentially, we only need to implement the following to functions,
-    # so that the torch.utils.data.DataLoader can load the data according the index.
-    # However, it's minimum change to switch to pytorch data loading.
-    def __getitem__(self, index):
+    def _get_item_helper(self, index):
         """This function returns a tuple that is further passed to collate_fn
         """
         ix = index #self.split_ix[index]
@@ -215,6 +233,21 @@ class DataLoader(data.Dataset):
         return (np.load(os.path.join(self.input_fc_dir, str(self.info['images'][ix]['id']) + '.npy')),
                 att_feat,
                 ix)
+
+    def __getitem__(self, index):
+        '''
+            [naxin] this function replaces the old __getitem__ and extracts the knn data by calling the old __getitem__
+            on the nearest neighbours' indexes.
+        '''
+        results = []
+        # get the item's result
+        results.append(self._get_item_helper(index))
+        # idx -> coco -> knn_idx
+        nns = self.knn_idx[self.idx_to_knn[index]]
+        for nextdoor in nns:
+            results.append(self.knn_to_idx[nextdoor])
+        return self._get_item_helper(index), (results)
+
 
     def __len__(self):
         return len(self.info['images'])
@@ -282,10 +315,11 @@ class BlobFetcher():
             self.reset()
 
         ix, wrapped = self._get_next_minibatch_inds()
-        tmp = self.split_loader.next()
+        tmp, knn_tmp = self.split_loader.next()
         if wrapped:
             self.reset()
 
         assert tmp[2] == ix, "ix not equal"
 
-        return tmp + [wrapped]
+        # [naxin] All the knn data are currently set aside in knn_tmp, which can processed in get_batch
+        return tmp + [wrapped], knn_tmp
