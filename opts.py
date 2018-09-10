@@ -94,7 +94,6 @@ def parse_opt():
                     help='epsilon that goes into denominator for smoothing')
     parser.add_argument('--weight_decay', type=float, default=0,
                     help='weight_decay')
-
     parser.add_argument('--scheduled_sampling_start', type=int, default=-1,
                     help='at what iteration to start decay gt probability')
     parser.add_argument('--scheduled_sampling_increase_every', type=int, default=5,
@@ -104,6 +103,7 @@ def parse_opt():
     parser.add_argument('--scheduled_sampling_max_prob', type=float, default=0.25,
                     help='Maximum scheduled sampling prob.')
 
+    parser.add_argument('--use_knn', action='store_true')
 
     # Evaluation/Checkpointing
     parser.add_argument('--val_images_use', type=int, default=3200,

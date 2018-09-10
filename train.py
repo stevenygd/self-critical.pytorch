@@ -3,8 +3,8 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
+# import torch.nn as nn
+# import torch.optim as optim
 
 import numpy as np
 
@@ -14,7 +14,8 @@ from six.moves import cPickle
 
 import opts
 import models
-from dataloader import *
+# from dataloader import *
+from dataloader import DataLoader
 import eval_utils
 import misc.utils as utils
 from misc.rewards import init_scorer, get_self_critical_reward
@@ -176,7 +177,7 @@ def train(opt):
             eval_kwargs = {'split': 'val',
                             'dataset': opt.input_json}
             eval_kwargs.update(vars(opt))
-            val_loss, predictions, lang_stats = eval_utils.eval_split(dp_model, crit, loader, eval_kwargs)
+            val_loss, predictions, lang_stats = eval_utils.eval_split(dp_model, crit, loader, eval_kwargs, use_knn=opt.use_knn)
 
             # Write validation result into summary
             add_summary_value(tb_summary_writer, 'validation loss', val_loss, iteration)

@@ -3,16 +3,16 @@ from __future__ import division
 from __future__ import print_function
 
 import torch
-import torch.nn as nn
+# import torch.nn as nn
 
 import numpy as np
 import json
-from json import encoder
-import random
-import string
-import time
+# from json import encoder
+# import random
+# import string
+# import time
 import os
-import sys
+# import sys
 import misc.utils as utils
 
 def language_eval(dataset, preds, model_id, split):
@@ -55,7 +55,7 @@ def language_eval(dataset, preds, model_id, split):
 
     return out
 
-def eval_split(model, crit, loader, eval_kwargs={}):
+def eval_split(model, crit, loader, eval_kwargs={}, use_knn=False):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
     verbose_loss = eval_kwargs.get('verbose_loss', 1)
@@ -76,9 +76,11 @@ def eval_split(model, crit, loader, eval_kwargs={}):
     loss_evals = 1e-8
     predictions = []
     while True:
-        data = loader.get_batch(split)
-        n = n + loader.batch_size
+        data, knn_data = loader.get_batch(split)
+        if use_knn:
+            data = knn_data
 
+        n = n + loader.batch_size
         if data.get('labels', None) is not None and verbose_loss:
             # forward the model to get loss
             tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks']]
@@ -92,7 +94,7 @@ def eval_split(model, crit, loader, eval_kwargs={}):
 
         # forward the model to also get generated samples for each image
         # Only leave one feature for each image, in case duplicate sample
-        tmp = [data['fc_feats'][np.arange(loader.batch_size) * loader.seq_per_img], 
+        tmp = [data['fc_feats'][np.arange(loader.batch_size) * loader.seq_per_img],
             data['att_feats'][np.arange(loader.batch_size) * loader.seq_per_img],
             data['att_masks'][np.arange(loader.batch_size) * loader.seq_per_img] if data['att_masks'] is not None else None]
         tmp = [torch.from_numpy(_).cuda() if _ is not None else _ for _ in tmp]
@@ -100,7 +102,7 @@ def eval_split(model, crit, loader, eval_kwargs={}):
         # forward the model to also get generated samples for each image
         with torch.no_grad():
             seq = model(fc_feats, att_feats, att_masks, opt=eval_kwargs, mode='sample')[0].data
-        
+
         # Print beam search
         if beam_size > 1 and verbose_beam:
             for i in range(loader.batch_size):

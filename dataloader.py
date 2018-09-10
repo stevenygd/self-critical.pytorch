@@ -199,10 +199,10 @@ class DataLoader(data.Dataset):
 
         data = self.__process_batch__(fc_batch, att_batch, label_batch, mask_batch, seq_per_img=seq_per_img, gts=gts)
         data['bounds'] = {'it_pos_now': self.iterators[split], 'it_max': len(self.split_ix[split]), 'wrapped': wrapped}
-        data['info'] = infos
+        data['infos'] = infos
 
         knn_data = self.__process_batch__(fc_knn, att_knn, label_knn, mask_knn, seq_per_img=seq_per_img)
-        knn_data['info'] = knn_infos
+        knn_data['infos'] = knn_infos
         knn_data['bounds'] = data['bounds'] # Testing purpose
 
         return data, knn_data
