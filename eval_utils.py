@@ -55,7 +55,7 @@ def language_eval(dataset, preds, model_id, split):
 
     return out
 
-def eval_split(model, crit, loader, eval_kwargs={}, use_knn=False):
+def eval_split(model, crit, loader, eval_kwargs={}):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
     verbose_loss = eval_kwargs.get('verbose_loss', 1)
@@ -76,11 +76,9 @@ def eval_split(model, crit, loader, eval_kwargs={}, use_knn=False):
     loss_evals = 1e-8
     predictions = []
     while True:
-        data, knn_data = loader.get_batch(split)
-        if use_knn:
-            data = knn_data
-
+        data, _ = loader.get_batch(split)
         n = n + loader.batch_size
+
         if data.get('labels', None) is not None and verbose_loss:
             # forward the model to get loss
             tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks'], data['att_masks']]
