@@ -143,23 +143,34 @@ class DataLoader(data.Dataset):
         att_batch = [] # np.ndarray((batch_size * seq_per_img, 14, 14, self.opt.att_feat_size), dtype = 'float32')
         label_batch = np.zeros([batch_size * seq_per_img, self.seq_length + 2], dtype = 'int')
         mask_batch = np.zeros([batch_size * seq_per_img, self.seq_length + 2], dtype = 'float32')
+        # [naxin] knn data
+        fc_knn = []
+        att_knn = []
+        label_knn = np.zeros_like(label_batch).astype('int')
+        mask_knn = np.zeros_like(mask_batch).astype('float32')
 
         wrapped = False
 
-        knn_tmps = []
+        knn_data = {}
 
         infos = []
+        knn_infos = []
         gts = []
 
         for i in range(batch_size):
             # fetch image, [naxin] all knn data are in knn_tmp
-            (tmp_fc, tmp_att,\
-                ix, tmp_wrapped), knn_tmp = self._prefetch_process[split].get()
+            tmp, tmp_wrapped, knn_tmp = self._prefetch_process[split].get()
+            tmp_fc, tmp_att, ix = tmp 
+            knn_fc, knn_att, knn_ix = knn_tmp
+
             fc_batch.append(tmp_fc)
             att_batch.append(tmp_att)
-            knn_tmps.append(knn_tmp)
 
+            fc_knn.append(knn_fc)
+            att_knn.append(knn_att)
+            
             label_batch[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(ix, seq_per_img)
+            label_knn[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(knn_ix, seq_per_img)
 
             if tmp_wrapped:
                 wrapped = True
@@ -174,9 +185,27 @@ class DataLoader(data.Dataset):
             info_dict['file_path'] = self.info['images'][ix]['file_path']
             infos.append(info_dict)
 
+            info_knn = {}
+            info_dict['ix'] = knn_ix
+            info_dict['id'] = self.info['images'][knn_ix]['id']
+            info_dict['file_path'] = self.info['images'][knn_ix]['file_path']
+            knn_infos.append(info_knn)
+        
         # [naxin] since key is constant the line below shouldn't be doing anything for knn_tmps
         fc_batch, att_batch, label_batch, gts, infos = \
             zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: 0, reverse=True))
+
+        data = self.__process_batch__(fc_batch, att_batch, label_batch, mask_batch, seq_per_img=seq_per_img, gts=gts)
+        data['bounds'] = {'it_pos_now': self.iterators[split], 'it_max': len(self.split_ix[split]), 'wrapped': wrapped}
+        data['info'] = infos
+
+        knn_data = self.__process_batch__(fc_knn, att_knn, label_knn, mask_knn, seq_per_img=seq_per_img)
+        knn_data['info'] = knn_infos
+        knn_data['bounds'] = data['bounds'] # Testing purpose
+
+        return data, knn_data
+
+    def __process_batch__(self, fc_batch, att_batch, label_batch, mask_batch, seq_per_img, gts=None):    
         data = {}
         data['fc_feats'] = np.stack(functools.reduce(
             lambda x,y:x+y, [[_]*seq_per_img for _ in fc_batch]))
@@ -200,11 +229,7 @@ class DataLoader(data.Dataset):
         data['masks'] = mask_batch
 
         data['gts'] = gts # all ground truth captions of each images
-        data['bounds'] = {'it_pos_now': self.iterators[split], 'it_max': len(self.split_ix[split]), 'wrapped': wrapped}
-        data['infos'] = infos
-
-        data['knn'] = knn_tmps
-
+        
         return data
 
     def _get_item_helper(self, index):
@@ -239,14 +264,10 @@ class DataLoader(data.Dataset):
             [naxin] this function replaces the old __getitem__ and extracts the knn data by calling the old __getitem__
             on the nearest neighbours' indexes.
         '''
-        results = []
-        # get the item's result
-        results.append(self._get_item_helper(index))
         # idx -> coco -> knn_idx
-        nns = self.knn_idx[self.idx_to_knn[index]]
-        for nextdoor in nns:
-            results.append(self.knn_to_idx[nextdoor])
-        return self._get_item_helper(index), (results)
+        # [naxin] Currently only retrieves the first knn result
+        nns = self.knn_idx[self.idx_to_knn[index]][0]
+        return self._get_item_helper(index), self._get_item_helper(nns)
 
 
     def __len__(self):
@@ -322,4 +343,4 @@ class BlobFetcher():
         assert tmp[2] == ix, "ix not equal"
 
         # [naxin] All the knn data are currently set aside in knn_tmp, which can processed in get_batch
-        return tmp + [wrapped], knn_tmp
+        return tmp, wrapped, knn_tmp

@@ -119,7 +119,8 @@ def train(opt):
 
         start = time.time()
         # Load data from train split (0)
-        data = loader.get_batch('train')
+        # [naxin] knn_data is the nearest neighbour batch, the format is identical to data
+        data, knn_data = loader.get_batch('train')
         print('Read data:', time.time() - start)
 
         torch.cuda.synchronize()
