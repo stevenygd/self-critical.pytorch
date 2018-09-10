@@ -12,8 +12,6 @@ import torch
 import torch.utils.data as data
 import functools
 
-import multiprocessing
-
 class DataLoader(data.Dataset):
 
     def reset_iterator(self, split):
@@ -50,10 +48,14 @@ class DataLoader(data.Dataset):
         print('vocab size is ', self.vocab_size)
 
         # [naxin] load knn lists
-        self.knn_idx = np.load('data/resnet-features-coco2014/peteranderson-fcfeat-knnidx.npy')
+        # self.knn_idx = np.load('data/resnet-features-coco2014/peteranderson-fcfeat-knnidx.npy')
+        self.knn_idx = np.load(getattr(opt, 'input_knn_mat'))
 
         # load nearest neighbour idx to coco
-        coco_ids = np.load('data/cocobu_nn/info.npy').item().get('nondup_imgid')
+        # coco_ids = np.load('data/cocobu_trainval_nn/info.npy').item().get('nondup_imgid')
+        coco_ids = np.load(os.path.join(getattr(opt, 'input_nn_dir', 0), 'info.npy'))\
+                .item().get('nondup_imgid')
+
         self.knn_to_coco = {}
         for i, coco_id in enumerate(coco_ids):
             self.knn_to_coco[i] = coco_id
@@ -160,7 +162,7 @@ class DataLoader(data.Dataset):
         for i in range(batch_size):
             # fetch image, [naxin] all knn data are in knn_tmp
             tmp, tmp_wrapped, knn_tmp = self._prefetch_process[split].get()
-            tmp_fc, tmp_att, ix = tmp 
+            tmp_fc, tmp_att, ix = tmp
             knn_fc, knn_att, knn_ix = knn_tmp
 
             fc_batch.append(tmp_fc)
@@ -168,7 +170,7 @@ class DataLoader(data.Dataset):
 
             fc_knn.append(knn_fc)
             att_knn.append(knn_att)
-            
+
             label_batch[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(ix, seq_per_img)
             label_knn[i * seq_per_img : (i + 1) * seq_per_img, 1 : self.seq_length + 1] = self.get_captions(knn_ix, seq_per_img)
 
@@ -190,7 +192,7 @@ class DataLoader(data.Dataset):
             info_dict['id'] = self.info['images'][knn_ix]['id']
             info_dict['file_path'] = self.info['images'][knn_ix]['file_path']
             knn_infos.append(info_knn)
-        
+
         # [naxin] since key is constant the line below shouldn't be doing anything for knn_tmps
         fc_batch, att_batch, label_batch, gts, infos = \
             zip(*sorted(zip(fc_batch, att_batch, np.vsplit(label_batch, batch_size), gts, infos), key=lambda x: 0, reverse=True))
@@ -205,7 +207,7 @@ class DataLoader(data.Dataset):
 
         return data, knn_data
 
-    def __process_batch__(self, fc_batch, att_batch, label_batch, mask_batch, seq_per_img, gts=None):    
+    def __process_batch__(self, fc_batch, att_batch, label_batch, mask_batch, seq_per_img, gts=None):
         data = {}
         data['fc_feats'] = np.stack(functools.reduce(
             lambda x,y:x+y, [[_]*seq_per_img for _ in fc_batch]))
@@ -229,7 +231,7 @@ class DataLoader(data.Dataset):
         data['masks'] = mask_batch
 
         data['gts'] = gts # all ground truth captions of each images
-        
+
         return data
 
     def _get_item_helper(self, index):

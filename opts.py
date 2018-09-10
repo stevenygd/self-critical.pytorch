@@ -9,8 +9,12 @@ def parse_opt():
                     help='path to the directory containing the preprocessed fc feats')
     parser.add_argument('--input_att_dir', type=str, default='data/cocotalk_att',
                     help='path to the directory containing the preprocessed att feats')
+    parser.add_argument('--input_nn_dir', type=str, default='data/cocotalk_nn',
+                    help='path to the directory containing the preprocessed nn feats')
     parser.add_argument('--input_box_dir', type=str, default='data/cocotalk_box',
                     help='path to the directory containing the boxes of att feats')
+    parser.add_argument('--input_knn_mat', type=str, default='data/resnet-features-coco2014',
+                    help='path to the directory containing KNN matrix')
     parser.add_argument('--input_label_h5', type=str, default='data/coco_label.h5',
                     help='path to the h5file containing the preprocessed dataset')
     parser.add_argument('--start_from', type=str, default=None,
