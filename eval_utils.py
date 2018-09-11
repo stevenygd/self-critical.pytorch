@@ -55,7 +55,8 @@ def language_eval(dataset, preds, model_id, split):
 
     return out
 
-def eval_split(model, crit, loader, eval_kwargs={}):
+
+def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
     verbose_loss = eval_kwargs.get('verbose_loss', 1)
@@ -75,6 +76,7 @@ def eval_split(model, crit, loader, eval_kwargs={}):
     loss_sum = 0
     loss_evals = 1e-8
     predictions = []
+    seen = set()
     while True:
         data, _ = loader.get_batch(split)
         n = n + loader.batch_size
@@ -110,9 +112,12 @@ def eval_split(model, crit, loader, eval_kwargs={}):
 
         for k, sent in enumerate(sents):
             entry = {'image_id': data['infos'][k]['id'], 'caption': sent}
+            if entry['image_id'] in seen:
+                continue
             if eval_kwargs.get('dump_path', 0) == 1:
                 entry['file_name'] = data['infos'][k]['file_path']
             predictions.append(entry)
+            seen.add(entry['image_id'])
             if eval_kwargs.get('dump_images', 0) == 1:
                 # dump the raw image to vis/ folder
                 cmd = 'cp "' + os.path.join(eval_kwargs['image_root'], data['infos'][k]['file_path']) + '" vis/imgs/img' + str(len(predictions)) + '.jpg' # bit gross
