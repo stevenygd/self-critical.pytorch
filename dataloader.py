@@ -188,9 +188,9 @@ class DataLoader(data.Dataset):
             infos.append(info_dict)
 
             info_knn = {}
-            info_dict['ix'] = knn_ix
-            info_dict['id'] = self.info['images'][knn_ix]['id']
-            info_dict['file_path'] = self.info['images'][knn_ix]['file_path']
+            info_knn['ix'] = knn_ix
+            info_knn['id'] = self.info['images'][knn_ix]['id']
+            info_knn['file_path'] = self.info['images'][knn_ix]['file_path']
             knn_infos.append(info_knn)
 
         # [naxin] since key is constant the line below shouldn't be doing anything for knn_tmps
