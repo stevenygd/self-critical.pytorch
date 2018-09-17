@@ -148,7 +148,7 @@
 #     --scheduled_sampling_increase_every 10 \
 #     --beam_size 5 \
 
-ID="cross_entropy"
+ID="cross_entropy_knndataonly"
 python train.py \
     --id ${ID} \
     --caption_model topdown \
