@@ -78,7 +78,7 @@ def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
     predictions = []
     seen = set()
     while True:
-        data, _ = loader.get_batch(split)
+        data, knn_data = loader.get_batch(split)
         n = n + loader.batch_size
 
         if data.get('labels', None) is not None and verbose_loss:
@@ -87,8 +87,12 @@ def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
             tmp = [torch.from_numpy(_).cuda() if _ is not None else _ for _ in tmp]
             fc_feats, att_feats, labels, masks, att_masks = tmp
 
+            knn_tmp = [knn_data['fc_feats'], knn_data['att_feats'], knn_data['labels'], knn_data['masks'], knn_data['att_masks']]
+            knn_tmp = [torch.from_numpy(_).cuda() if _ is not None else _ for _ in knn_tmp]
+
             with torch.no_grad():
-                loss = crit(model(fc_feats, att_feats, labels, att_masks), labels[:,1:], masks[:,1:]).item()
+                loss = crit(model(fc_feats, att_feats, labels, att_masks, knn_feat=knn_tmp),
+                        labels[:,1:], masks[:,1:]).item()
             loss_sum = loss_sum + loss
             loss_evals = loss_evals + 1
 
@@ -101,7 +105,8 @@ def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
         fc_feats, att_feats, att_masks = tmp
         # forward the model to also get generated samples for each image
         with torch.no_grad():
-            seq = model(fc_feats, att_feats, att_masks, opt=eval_kwargs, mode='sample')[0].data
+            seq = model(fc_feats, att_feats, att_masks, opt=eval_kwargs,
+                        mode='sample', knn_feat=knn_tmp)[0].data
 
         # Print beam search
         if beam_size > 1 and verbose_beam:

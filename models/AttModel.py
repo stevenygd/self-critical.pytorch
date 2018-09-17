@@ -20,7 +20,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import misc.utils as utils
+# import misc.utils as utils
 from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 
 from .CaptionModel import CaptionModel
@@ -108,14 +108,23 @@ class AttModel(CaptionModel):
 
         return fc_feats, att_feats, p_att_feats, att_masks
 
-    def _forward(self, fc_feats, att_feats, seq, att_masks=None):
+    def _forward(self, fc_feats, att_feats, seq, att_masks=None, knn_feat=None):
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
 
         outputs = fc_feats.new_zeros(batch_size, seq.size(1) - 1, self.vocab_size+1)
 
+        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks = knn_feat
+
         # Prepare the features
-        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(fc_feats, att_feats, att_masks)
+        p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks = \
+                self._prepare_feature(
+                    knn_fc_feats, knn_att_feats, knn_att_masks)
+        # TODO: we also might want to embed the KNN words
+
+        p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = \
+                self._prepare_feature(
+                    fc_feats, att_feats, att_masks)
         # pp_att_feats is used for attention, we cache it in advance to reduce computation cost
 
         for i in range(seq.size(1) - 1):
@@ -133,30 +142,55 @@ class AttModel(CaptionModel):
                     prob_prev = torch.exp(outputs[:, i-1].detach()) # fetch prev distribution: shape Nx(M+1)
                     it.index_copy_(0, sample_ind, torch.multinomial(prob_prev, 1).view(-1).index_select(0, sample_ind))
             else:
-                it = seq[:, i].clone()          
+                it = seq[:, i].clone()
             # break if all the sequences end
             if i >= 1 and seq[:, i].sum() == 0:
                 break
 
-            output, state = self.get_logprobs_state(it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
+            p_knn_feats = (
+                knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks,
+                p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks,
+                knn_labels, knn_masks
+            )
+            output, state = self.get_logprobs_state(
+                    it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks,
+                    state, knn_feat=p_knn_feats)
             outputs[:, i] = output
 
         return outputs
 
-    def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, att_masks, state):
+    def get_logprobs_state(self, it, fc_feats, att_feats, p_att_feats, att_masks, state, knn_feat=None):
+
+        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks, \
+        p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks, \
+        knn_labels, knn_masks = knn_feat
+
         # 'it' contains a word index
         xt = self.embed(it)
 
-        output, state = self.core(xt, fc_feats, att_feats, p_att_feats, state, att_masks)
+        # NOTE: embedding KNN words in the same space
+        # batch_size x seq_len x 1000
+        knn_words_proto = self.embed(knn_labels) * knn_masks.unsqueeze(2)
+        knn_feat = knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks, \
+                   p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks, \
+                   knn_labels, knn_words_proto, knn_masks
+
+        output, state = self.core(
+                xt, fc_feats, att_feats, p_att_feats, state, att_masks, knn_feat=knn_feat)
         logprobs = F.log_softmax(self.logit(output), dim=1)
 
         return logprobs, state
 
-    def _sample_beam(self, fc_feats, att_feats, att_masks=None, opt={}):
+    def _sample_beam(self, fc_feats, att_feats, att_masks=None, opt={}, knn_feat=None):
         beam_size = opt.get('beam_size', 10)
         batch_size = fc_feats.size(0)
 
+        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks = knn_feat
         p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(fc_feats, att_feats, att_masks)
+        # Prepare the features
+        p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks = \
+                self._prepare_feature(
+                    knn_fc_feats, knn_att_feats, knn_att_masks)
 
         assert beam_size <= self.vocab_size + 1, 'lets assume this for now, otherwise this corner case causes a few headaches down the road. can be dealt with in future if needed'
         seq = torch.LongTensor(self.seq_length, batch_size).zero_()
@@ -171,30 +205,45 @@ class AttModel(CaptionModel):
             tmp_p_att_feats = pp_att_feats[k:k+1].expand(*((beam_size,)+pp_att_feats.size()[1:])).contiguous()
             tmp_att_masks = p_att_masks[k:k+1].expand(*((beam_size,)+p_att_masks.size()[1:])).contiguous() if att_masks is not None else None
 
+            p_knn_feats = [
+                knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks,
+                p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks,
+                knn_labels, knn_masks
+            ]
+            p_knn_feats = [x[k:k+1].expand(*((beam_size,)+x.size()[1:])).contiguous() \
+                           for x in p_knn_feats]
+
             for t in range(1):
                 if t == 0: # input <bos>
                     it = fc_feats.new_zeros([beam_size], dtype=torch.long)
 
-                logprobs, state = self.get_logprobs_state(it, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks, state)
+                logprobs, state = self.get_logprobs_state(
+                        it, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks,
+                        state, knn_feat=p_knn_feats)
 
-            self.done_beams[k] = self.beam_search(state, logprobs, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks, opt=opt)
+            self.done_beams[k] = self.beam_search(state, logprobs, tmp_fc_feats, tmp_att_feats, tmp_p_att_feats, tmp_att_masks, opt=opt, knn_feat=p_knn_feats)
             seq[:, k] = self.done_beams[k][0]['seq'] # the first beam has highest cumulative score
             seqLogprobs[:, k] = self.done_beams[k][0]['logps']
         # return the samples and their log likelihoods
         return seq.transpose(0, 1), seqLogprobs.transpose(0, 1)
 
-    def _sample(self, fc_feats, att_feats, att_masks=None, opt={}):
+    def _sample(self, fc_feats, att_feats, att_masks=None, opt={}, knn_feat=None):
 
         sample_max = opt.get('sample_max', 1)
         beam_size = opt.get('beam_size', 1)
         temperature = opt.get('temperature', 1.0)
         decoding_constraint = opt.get('decoding_constraint', 0)
         if beam_size > 1:
-            return self._sample_beam(fc_feats, att_feats, att_masks, opt)
+            return self._sample_beam(fc_feats, att_feats, att_masks, opt, knn_feat=knn_feat)
 
         batch_size = fc_feats.size(0)
         state = self.init_hidden(batch_size)
 
+        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks = knn_feat
+        # Prepare the features
+        p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks = \
+                self._prepare_feature(
+                    knn_fc_feats, knn_att_feats, knn_att_masks)
         p_fc_feats, p_att_feats, pp_att_feats, p_att_masks = self._prepare_feature(fc_feats, att_feats, att_masks)
 
         seq = fc_feats.new_zeros((batch_size, self.seq_length), dtype=torch.long)
@@ -203,8 +252,13 @@ class AttModel(CaptionModel):
             if t == 0: # input <bos>
                 it = fc_feats.new_zeros(batch_size, dtype=torch.long)
 
-            logprobs, state = self.get_logprobs_state(it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state)
-            
+            p_knn_feats = (
+                knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks,
+                p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks,
+                knn_labels, knn_masks
+            )
+            logprobs, state = self.get_logprobs_state(it, p_fc_feats, p_att_feats, pp_att_feats, p_att_masks, state, knn_feat=p_knn_feats)
+
             if decoding_constraint and t > 0:
                 tmp = logprobs.new_zeros(logprobs.size())
                 tmp.scatter_(1, seq[:,t-1].data.unsqueeze(1), float('-inf'))
@@ -324,7 +378,7 @@ class AdaAtt_lstm(nn.Module):
         top_h = F.dropout(top_h, self.drop_prob_lm, self.training)
         fake_region = F.dropout(fake_region, self.drop_prob_lm, self.training)
 
-        state = (torch.cat([_.unsqueeze(0) for _ in hs], 0), 
+        state = (torch.cat([_.unsqueeze(0) for _ in hs], 0),
                 torch.cat([_.unsqueeze(0) for _ in cs], 0))
         return top_h, fake_region, state
 
@@ -340,14 +394,14 @@ class AdaAtt_attention(nn.Module):
         # fake region embed
         self.fr_linear = nn.Sequential(
             nn.Linear(self.rnn_size, self.input_encoding_size),
-            nn.ReLU(), 
+            nn.ReLU(),
             nn.Dropout(self.drop_prob_lm))
         self.fr_embed = nn.Linear(self.input_encoding_size, self.att_hid_size)
 
         # h out embed
         self.ho_linear = nn.Sequential(
             nn.Linear(self.rnn_size, self.input_encoding_size),
-            nn.Tanh(), 
+            nn.Tanh(),
             nn.Dropout(self.drop_prob_lm))
         self.ho_embed = nn.Linear(self.input_encoding_size, self.att_hid_size)
 
@@ -375,7 +429,7 @@ class AdaAtt_attention(nn.Module):
 
         hA = F.tanh(img_all_embed + txt_replicate)
         hA = F.dropout(hA,self.drop_prob_lm, self.training)
-        
+
         hAflat = self.alpha_net(hA.view(-1, self.att_hid_size))
         PI = F.softmax(hAflat.view(-1, att_size + 1), dim=1)
 
@@ -430,6 +484,59 @@ class TopDownCore(nn.Module):
         state = (torch.stack([h_att, h_lang]), torch.stack([c_att, c_lang]))
 
         return output, state
+
+class TopDownNNEditCore(nn.Module):
+    def __init__(self, opt, use_maxout=False):
+        super(TopDownNNEditCore, self).__init__()
+        self.drop_prob_lm = opt.drop_prob_lm
+        self.opt = opt
+
+        # TODO : assuming input_encoding_size for only for dim(xt)
+        self.att_lstm = nn.LSTMCell(
+                opt.input_encoding_size + opt.rnn_size * 3,
+                opt.rnn_size) # we, fc, knn_fc, h^2_t-1
+        self.lang_lstm = nn.LSTMCell(
+                opt.rnn_size * 2 + opt.input_encoding_size,
+                opt.rnn_size) # h^1_t, \hat v, \hat w_p
+        self.attention = Attention(opt)
+        # self.knn_attention = Attention(opt)
+
+        self.word_ctx2att = nn.Linear(
+                self.opt.input_encoding_size, self.opt.att_hid_size)
+        self.word_attention = Attention(opt)
+
+    def forward(self, xt, fc_feats, att_feats, p_att_feats, state,
+                att_masks=None, knn_feat=None):
+        assert knn_feat is not None
+
+        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks, \
+        p_knn_fc_feats, p_knn_att_feats, pp_knn_att_feats, p_knn_att_masks, \
+                   knn_labels, knn_words_proto, knn_masks = knn_feat
+
+        prev_h = state[0][-1]
+        att_lstm_input = torch.cat([prev_h, fc_feats, p_knn_fc_feats, xt], 1)
+
+        h_att, c_att = self.att_lstm(att_lstm_input, (state[0][0], state[1][0]))
+
+        att = self.attention(h_att, att_feats, p_att_feats, att_masks)
+        # knn_vis_att  = self.knn_attention(
+        #         h_att, knn_att_feats, p_knn_att_feats, knn_att_masks)
+
+        # TODO: not yet have the projected version of p_att_feats for words
+        # knn_word_att = self.attention(h_att, knn_words_proto, p_att_feats, knn_masks)
+        p_att_feats = self.word_ctx2att(knn_words_proto)
+        knn_word_att = self.word_attention(h_att, knn_words_proto, p_att_feats, knn_masks)
+
+        lang_lstm_input = torch.cat([att, knn_word_att, h_att], 1)
+        # lang_lstm_input = torch.cat([att, F.dropout(h_att, self.drop_prob_lm, self.training)], 1) ?????
+
+        h_lang, c_lang = self.lang_lstm(lang_lstm_input, (state[0][1], state[1][1]))
+
+        output = F.dropout(h_lang, self.drop_prob_lm, self.training)
+        state = (torch.stack([h_att, h_lang]), torch.stack([c_att, c_lang]))
+
+        return output, state
+
 
 
 ############################################################################
@@ -521,7 +628,7 @@ class Attention(nn.Module):
         # The p_att_feats here is already projected
         att_size = att_feats.numel() // att_feats.size(0) // att_feats.size(-1)
         att = p_att_feats.view(-1, att_size, self.att_hid_size)
-        
+
         att_h = self.h2att(h)                        # batch * att_hid_size
         att_h = att_h.unsqueeze(1).expand_as(att)            # batch * att_size * att_hid_size
         dot = att + att_h                                   # batch * att_size * att_hid_size
@@ -529,7 +636,7 @@ class Attention(nn.Module):
         dot = dot.view(-1, self.att_hid_size)               # (batch * att_size) * att_hid_size
         dot = self.alpha_net(dot)                           # (batch * att_size) * 1
         dot = dot.view(-1, att_size)                        # batch * att_size
-        
+
         weight = F.softmax(dot, dim=1)                             # batch * att_size
         if att_masks is not None:
             weight = weight * att_masks.view(-1, att_size).float()
@@ -550,7 +657,7 @@ class Att2in2Core(nn.Module):
         self.fc_feat_size = opt.fc_feat_size
         self.att_feat_size = opt.att_feat_size
         self.att_hid_size = opt.att_hid_size
-        
+
         # Build a LSTM
         self.a2c = nn.Linear(self.rnn_size, 2 * self.rnn_size)
         self.i2h = nn.Linear(self.input_encoding_size, 5 * self.rnn_size)
@@ -602,7 +709,7 @@ class Att2all2Core(nn.Module):
         self.fc_feat_size = opt.fc_feat_size
         self.att_feat_size = opt.att_feat_size
         self.att_hid_size = opt.att_hid_size
-        
+
         # Build a LSTM
         self.a2h = nn.Linear(self.rnn_size, 5 * self.rnn_size)
         self.i2h = nn.Linear(self.input_encoding_size, 5 * self.rnn_size)
@@ -662,6 +769,12 @@ class TopDownModel(AttModel):
         super(TopDownModel, self).__init__(opt)
         self.num_layers = 2
         self.core = TopDownCore(opt)
+
+class TopDownNNEditModel(AttModel):
+    def __init__(self, opt):
+        super(TopDownNNEditModel, self).__init__(opt)
+        self.num_layers = 2
+        self.core = TopDownNNEditCore(opt)
 
 class StackAttModel(AttModel):
     def __init__(self, opt):

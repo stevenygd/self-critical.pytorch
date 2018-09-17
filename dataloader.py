@@ -211,6 +211,7 @@ class DataLoader(data.Dataset):
         data = {}
         data['fc_feats'] = np.stack(functools.reduce(
             lambda x,y:x+y, [[_]*seq_per_img for _ in fc_batch]))
+
         # merge att_feats
         max_att_len = max([_.shape[0] for _ in att_batch])
         data['att_feats'] = np.zeros([len(att_batch)*seq_per_img, max_att_len, att_batch[0].shape[1]], dtype = 'float32')
@@ -313,7 +314,7 @@ class BlobFetcher():
                                             sampler=SubsetSampler(self.dataloader.split_ix[self.split][self.dataloader.iterators[self.split]:]),
                                             shuffle=False,
                                             pin_memory=True,
-                                            num_workers=4, # 4 is usually enough
+                                            num_workers=0, # 4 is usually enough
                                             collate_fn=lambda x: x[0]))
 
     def _get_next_minibatch_inds(self):

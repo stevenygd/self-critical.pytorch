@@ -72,6 +72,9 @@ def set_lr(optimizer, lr):
 def clip_gradient(optimizer, grad_clip):
     for group in optimizer.param_groups:
         for param in group['params']:
+            if param is None or param.grad is None:
+                print(param)
+                print(param.name)
             param.grad.data.clamp_(-grad_clip, grad_clip)
 
 def build_optimizer(params, opt):
@@ -89,4 +92,4 @@ def build_optimizer(params, opt):
         return optim.Adam(params, opt.learning_rate, (opt.optim_alpha, opt.optim_beta), opt.optim_epsilon, weight_decay=opt.weight_decay)
     else:
         raise Exception("bad option opt.optim: {}".format(opt.optim))
-    
+

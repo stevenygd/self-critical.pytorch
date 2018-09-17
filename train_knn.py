@@ -132,13 +132,17 @@ def train(opt):
         tmp = [_ if _ is None else torch.from_numpy(_).cuda() for _ in tmp]
         knn_tmp = [_ if _ is None else torch.from_numpy(_).cuda() for _ in knn_tmp]
         fc_feats, att_feats, labels, masks, att_masks = tmp
-        knn_fc_feats, knn_att_feats, knn_labels, knn_masks, knn_att_masks = knn_tmp
 
         optimizer.zero_grad()
-        if not sc_flag:
-            loss = crit(dp_model(fc_feats, att_feats, labels, att_masks), labels[:,1:], masks[:,1:])
-        else:
-            gen_result, sample_logprobs = dp_model(fc_feats, att_feats, att_masks, opt={'sample_max':0}, mode='sample')
+        if not sc_flag: # cross entropy
+            loss = crit(dp_model(
+                fc_feats, att_feats, labels, att_masks, knn_feat=knn_tmp),
+                labels[:,1:], masks[:,1:],
+            )
+        else: # TODO
+            gen_result, sample_logprobs = dp_model(
+                    fc_feats, att_feats, att_masks,
+                    opt={'sample_max':0}, mode='sample', knn_feat=knn_tmp)
             reward = get_self_critical_reward(dp_model, fc_feats, att_feats, att_masks, data, gen_result, opt)
             loss = rl_crit(sample_logprobs, gen_result.data, torch.from_numpy(reward).float().cuda())
 
