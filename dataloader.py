@@ -42,7 +42,6 @@ class DataLoader(data.Dataset):
         # load the json file which contains additional information about the dataset
         print('DataLoader loading json file: ', opt.input_json)
         self.info = json.load(open(self.opt.input_json))
-        self.cocoid_to_idx = {d['id']:idx for idx,d in enumerate(self.info['images'])}
         self.ix_to_word = self.info['ix_to_word']
         self.vocab_size = len(self.ix_to_word)
         print('vocab size is ', self.vocab_size)
@@ -56,13 +55,17 @@ class DataLoader(data.Dataset):
         coco_ids = np.load(os.path.join(getattr(opt, 'input_nn_dir', 0), 'info.npy'))\
                 .item().get('nondup_imgid')
 
+        # knnidx -> cocoidx
         self.knn_to_coco = {}
         for i, coco_id in enumerate(coco_ids):
             self.knn_to_coco[i] = coco_id
 
+        # cocoidx -> infoidx
+        self.cocoid_to_idx = {d['id']:idx for idx,d in enumerate(self.info['images'])}
+
         # [naxin] setup nearest neighbour idx to idx and also its reverse
-        self.idx_to_knn = {}
-        self.knn_to_idx = {}
+        self.idx_to_knn = {} # knnidx  -> infoindex
+        self.knn_to_idx = {} # infoidx -> knnidx
         for key in self.knn_to_coco.keys():
             val = self.cocoid_to_idx[self.knn_to_coco[key]]
             self.knn_to_idx[key] = val
@@ -268,7 +271,10 @@ class DataLoader(data.Dataset):
         '''
         # idx -> coco -> knn_idx
         # [naxin] Currently only retrieves the first knn result
-        nns = self.knn_idx[self.idx_to_knn[index]][0]
+        # nns = self.knn_idx[self.idx_to_knn[index]][0]
+        nns = self.knn_to_idx[self.knn_idx[self.idx_to_knn[index]][0]]
+
+        assert self.info['images'][nns]['split'] not in ['test', 'val']
         return self._get_item_helper(index), self._get_item_helper(nns)
 
 
