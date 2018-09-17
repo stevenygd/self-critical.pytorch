@@ -185,7 +185,7 @@ python train_knn.py \
     --input_knn_mat data/resnet-features-coco2014/peteranderson-fcfeat-knnidx.npy \
     --input_label_h5 data/cocotalk_label.h5 \
     --checkpoint_path ${ID} \
-    --save_checkpoint_every 3 \
+    --save_checkpoint_every 1000 \
     --language_eval 1 \
     --val_images_use 5000 \
     --input_encoding_size 1000 \
