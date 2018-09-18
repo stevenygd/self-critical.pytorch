@@ -273,7 +273,14 @@ class DataLoader(data.Dataset):
         # idx -> coco -> knn_idx
         # [naxin] Currently only retrieves the first knn result
         # nns = self.knn_idx[self.idx_to_knn[index]][0]
-        nns = self.knn_to_idx[self.knn_idx[self.idx_to_knn[index]][0]]
+        if self.info['images'][index]['split'] in ['train', 'restval']:
+            # In this case, 0 is the image itself
+            nns = self.knn_to_idx[self.knn_idx[self.idx_to_knn[index]][1]]
+        elif self.info['images'][index]['split'] in ['test', 'val']:
+            # In this case, 0 is the KNN image in the training set
+            nns = self.knn_to_idx[self.knn_idx[self.idx_to_knn[index]][0]]
+        else:
+            raise Exception("Invalid split")
 
         assert self.info['images'][nns]['split'] not in ['test', 'val']
         return self._get_item_helper(index), self._get_item_helper(nns)
