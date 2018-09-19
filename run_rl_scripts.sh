@@ -197,4 +197,5 @@ python train_knn.py \
     --scheduled_sampling_start 0 \
     --learning_rate_decay_every 6 \
     --scheduled_sampling_increase_every 10 \
-    --beam_size 5 ;
+    --beam_size 5 \
+    --start_from ${ID};
