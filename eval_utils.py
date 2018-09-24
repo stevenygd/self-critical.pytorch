@@ -56,7 +56,7 @@ def language_eval(dataset, preds, model_id, split):
     return out
 
 
-def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
+def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True, no_score=False):
     verbose = eval_kwargs.get('verbose', True)
     verbose_beam = eval_kwargs.get('verbose_beam', 1)
     verbose_loss = eval_kwargs.get('verbose_loss', 1)
@@ -147,6 +147,9 @@ def eval_split(model, crit, loader, eval_kwargs={}, eval_knn=True):
             break
         if num_images >= 0 and n >= num_images:
             break
+
+    if no_score:
+        return predictions
 
     lang_stats = None
     if lang_eval == 1:

@@ -68,6 +68,7 @@ update_lr_flag = True
 crit = utils.LanguageModelCriterion()
 
 splits = ['train', 'val', 'test']
+predictions = []
 
 for sp in splits:
     eval_kwargs = {'split': sp,
@@ -76,9 +77,12 @@ for sp in splits:
                    'lang_eval': 0}
     eval_kwargs.update(vars(opt))
     # import pdb; pdb.set_trace()
-    val_loss, predictions, lang_stats = eval_utils.eval_split(dp_model, crit, loader, eval_kwargs)
+    predictions += eval_utils.eval_split(dp_model, crit, loader, eval_kwargs, no_score=True)
 
-    val_result_history[sp] = {'loss': val_loss, 'lang_stats': lang_stats, 'predictions': predictions}
+out = eval_utils.language_eval(None, predictions, opt.id, 'custom_eval')
 
-with open(os.path.join(opt.checkpoint_path, 'eval_result__'+opt.id+'.pkl'), 'wb') as f:
-    cPickle.dump(val_result_history, f)
+from pprint import pprint
+pprint(out)
+
+with open(os.path.join(opt.checkpoint_path, 'custom_eval_'+opt.id+'.pkl'), 'wb+') as f:
+    cPickle.dump(out, f)
